@@ -1,0 +1,84 @@
+version: "3.7"
+  
+volumes:
+  nuoadmin-raft-1:
+  nuoadmin-raft-2:
+  t24nuodb-arch-vol-1:
+ 
+services:
+ nuoadmin1:
+   image: 253498545298.dkr.ecr.us-east-1.amazonaws.com/nuodb-docker-4.1.1-3:latest
+   ports:
+      - 8888:8888
+      - 48004:48004
+      - 48005:48005
+   environment:
+     NUODB_DOMAIN_ENTRYPOINT: nuoadmin1
+     NUOCMD_API_SERVER: http://nuoadmin1:8888
+   hostname: nuoadmin1
+   volumes:
+     - nuoadmin-raft-1:/var/opt/nuodb
+   command: ["nuoadmin", "--", "ssl=false"]
+   
+ nuoadmin2:
+   image: 253498545298.dkr.ecr.us-east-1.amazonaws.com/nuodb-docker-4.1.1-3:latest
+   environment:
+     NUODB_DOMAIN_ENTRYPOINT: nuoadmin1
+     NUOCMD_API_SERVER: http://nuoadmin2:8888
+   hostname: nuoadmin2
+   volumes:
+     - nuoadmin-raft-2:/var/opt/nuodb
+   command: ["nuoadmin", "--", "ssl=false"]
+   
+ sm:
+   image: 253498545298.dkr.ecr.us-east-1.amazonaws.com/nuodb-docker-4.1.1-3:latest
+   hostname: sm
+   environment:
+     NUOCMD_API_SERVER: http://nuoadmin1:8888
+   volumes:
+     - t24nuodb-arch-vol-1:/var/opt/nuodb
+   depends_on:
+   - nuoadmin1
+   command: bash -c "cd /home/nuodb
+      && curl -O https://nuobbkp.s3.amazonaws.com/newarch.tar
+      && mkdir -p /var/opt/nuodb/new_archive
+      && tar xvf newarch.tar -C /var/opt/nuodb/new_archive
+      && nuodocker start sm --db-name t24Nuodb --server-id nuoadmin1 --dba-user T24 --dba-password T24 --archive-dir /var/opt/nuodb/new_archive/t24Nuodb --servers-ready-timeout 15000 --restored"
+      
+ te1:
+   image: 253498545298.dkr.ecr.us-east-1.amazonaws.com/nuodb-docker-4.1.1-3:latest
+   ports:
+      - 48006:48006
+   hostname: te1
+   environment:
+     NUOCMD_API_SERVER: http://nuoadmin1:8888
+   depends_on:
+   - nuoadmin1
+   - sm
+   command: bash -c "nuodocker start te --db-name t24Nuodb --server-id nuoadmin1 --servers-ready-timeout 15000"
+   restart: on-failure
+   
+ te2:
+   image: 253498545298.dkr.ecr.us-east-1.amazonaws.com/nuodb-docker-4.1.1-3:latest
+   hostname: te2
+   environment:
+     NUOCMD_API_SERVER: http://nuoadmin1:8888
+   depends_on:
+   - nuoadmin1
+   - sm
+   - te1
+   command: bash -c "nuodocker start te --db-name t24Nuodb --server-id nuoadmin1 --servers-ready-timeout 15000"
+   restart: on-failure
+   
+ te3:
+   image: 253498545298.dkr.ecr.us-east-1.amazonaws.com/nuodb-docker-4.1.1-3:latest
+   hostname: te2
+   environment:
+     NUOCMD_API_SERVER: http://nuoadmin1:8888
+   depends_on:
+   - nuoadmin1
+   - sm
+   - te1
+   - te2
+   command: bash -c "nuodocker start te --db-name t24Nuodb --server-id nuoadmin1 --servers-ready-timeout 15000"
+   restart: on-failure
